@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
+import 'dart:math' as math;
 import '../models/image_model.dart';
 import '../providers/settings_provider.dart';
 import '../services/pexels_service.dart';
@@ -18,11 +19,14 @@ class SlideshowScreen extends StatefulWidget {
   State<SlideshowScreen> createState() => _SlideshowScreenState();
 }
 
-class _SlideshowScreenState extends State<SlideshowScreen> with SingleTickerProviderStateMixin {
+class _SlideshowScreenState extends State<SlideshowScreen> with TickerProviderStateMixin {
   final PexelsService _pexelsService = PexelsService();
   late final CacheService _cacheService;
   late AnimationController _fadeController;
+  late AnimationController _kenBurnsController;
   late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
+  late Animation<double> _scaleAnimation;
   Timer? _slideshowTimer;
   
   List<PexelsImage> _images = [];
@@ -30,33 +34,83 @@ class _SlideshowScreenState extends State<SlideshowScreen> with SingleTickerProv
   bool _isLoading = true;
   bool _isOffline = false;
 
+  // Ken Burns effect parameters
+  final List<double> _scales = [1.0, 1.1, 1.2];
+  final List<Alignment> _alignments = [
+    const Alignment(-1, -1),
+    const Alignment(1, 1),
+    const Alignment(-1, 1),
+    const Alignment(1, -1),
+  ];
+  int _currentScaleIndex = 0;
+  int _currentAlignmentIndex = 0;
+  int? _lastInterval;
+
   @override
   void initState() {
     super.initState();
     debugPrint('SlideshowScreen: Initializing');
     _fadeController = AnimationController(
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 1000),
+      vsync: this,
+    );
+    _kenBurnsController = AnimationController(
+      duration: const Duration(seconds: 10),
       vsync: this,
     );
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(_fadeController);
+    _initializeKenBurnsAnimations();
     _initializeServices();
   }
 
+  void _initializeKenBurnsAnimations() {
+    final startScale = _scales[_currentScaleIndex];
+    final endScale = _scales[(_currentScaleIndex + 1) % _scales.length];
+    final startAlignment = _alignments[_currentAlignmentIndex];
+    final endAlignment = _alignments[(_currentAlignmentIndex + 1) % _alignments.length];
+
+    _scaleAnimation = Tween<double>(
+      begin: startScale,
+      end: endScale,
+    ).animate(CurvedAnimation(
+      parent: _kenBurnsController,
+      curve: Curves.easeInOut,
+    ));
+
+    _slideAnimation = Tween<Offset>(
+      begin: Offset(startAlignment.x, startAlignment.y),
+      end: Offset(endAlignment.x, endAlignment.y),
+    ).animate(CurvedAnimation(
+      parent: _kenBurnsController,
+      curve: Curves.easeInOut,
+    ));
+
+    _kenBurnsController.forward();
+  }
+
   void _startSlideshowTimer() {
-    _slideshowTimer?.cancel();
     final settings = context.read<SettingsProvider>().settings;
-    _slideshowTimer = Timer.periodic(
-      Duration(seconds: settings.slideshowInterval.seconds),
-      (_) => _nextImage(),
-    );
-    debugPrint('SlideshowScreen: Started timer with ${settings.slideshowInterval.seconds}s interval');
+    final newInterval = settings.slideshowInterval.seconds;
+    
+    // Only restart timer if interval has changed
+    if (_lastInterval != newInterval) {
+      _slideshowTimer?.cancel();
+      _slideshowTimer = Timer.periodic(
+        Duration(seconds: newInterval),
+        (_) => _nextImage(),
+      );
+      _lastInterval = newInterval;
+      debugPrint('SlideshowScreen: Started timer with ${newInterval}s interval');
+    }
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Restart timer when settings change
-    _startSlideshowTimer();
+    // Only start timer if we have images loaded
+    if (!_isLoading && _images.isNotEmpty) {
+      _startSlideshowTimer();
+    }
   }
 
   Future<void> _initializeServices() async {
@@ -64,7 +118,6 @@ class _SlideshowScreenState extends State<SlideshowScreen> with SingleTickerProv
     final prefs = await SharedPreferences.getInstance();
     _cacheService = CacheService(prefs);
     await _loadImages();
-    _startSlideshowTimer();
   }
 
   Future<void> _loadImages() async {
@@ -82,6 +135,7 @@ class _SlideshowScreenState extends State<SlideshowScreen> with SingleTickerProv
           _isOffline = false;
         });
         _fadeController.forward();
+        _startSlideshowTimer();
         
         // Cache current and next few images
         _cacheCurrentAndNextImages();
@@ -122,30 +176,33 @@ class _SlideshowScreenState extends State<SlideshowScreen> with SingleTickerProv
   }
 
   void _nextImage() {
-    if (_currentIndex < _images.length - 1) {
-      _fadeController.reverse().then((_) {
-        setState(() {
+    _fadeController.reverse().then((_) {
+      setState(() {
+        if (_currentIndex < _images.length - 1) {
           _currentIndex++;
-        });
-        _fadeController.forward();
-        _cacheCurrentAndNextImages();
-      });
-    } else {
-      // Reset to first image when reaching the end
-      _fadeController.reverse().then((_) {
-        setState(() {
+        } else {
           _currentIndex = 0;
-        });
-        _fadeController.forward();
-        _cacheCurrentAndNextImages();
+        }
+        
+        // Update Ken Burns effect parameters
+        _currentScaleIndex = (_currentScaleIndex + 1) % _scales.length;
+        _currentAlignmentIndex = (_currentAlignmentIndex + 1) % _alignments.length;
+        
+        // Reset and reinitialize Ken Burns animations
+        _kenBurnsController.reset();
+        _initializeKenBurnsAnimations();
       });
-    }
+      
+      _fadeController.forward();
+      _cacheCurrentAndNextImages();
+    });
   }
 
   @override
   void dispose() {
     _slideshowTimer?.cancel();
     _fadeController.dispose();
+    _kenBurnsController.dispose();
     _pexelsService.dispose();
     _cacheService.dispose();
     super.dispose();
@@ -182,16 +239,33 @@ class _SlideshowScreenState extends State<SlideshowScreen> with SingleTickerProv
         child: Stack(
           fit: StackFit.expand,
           children: [
-            FadeTransition(
-              opacity: _fadeAnimation,
-              child: CachedNetworkImage(
-                imageUrl: currentImage.getBestQualityUrl(screenSize.width),
-                fit: BoxFit.cover,
-                placeholder: (context, url) => Container(
-                  color: Theme.of(context).colorScheme.background,
-                ),
-                errorWidget: (context, url, error) => const Icon(Icons.error),
-              ),
+            AnimatedBuilder(
+              animation: Listenable.merge([_kenBurnsController, _fadeController]),
+              builder: (context, child) {
+                return Transform.scale(
+                  scale: _scaleAnimation.value,
+                  child: FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                      ),
+                      child: CachedNetworkImage(
+                        imageUrl: currentImage.getBestQualityUrl(screenSize.width),
+                        fit: BoxFit.cover,
+                        alignment: Alignment(
+                          _slideAnimation.value.dx,
+                          _slideAnimation.value.dy,
+                        ),
+                        placeholder: (context, url) => Container(
+                          color: Theme.of(context).colorScheme.background,
+                        ),
+                        errorWidget: (context, url, error) => const Icon(Icons.error),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
             if (_isOffline)
               Positioned(
