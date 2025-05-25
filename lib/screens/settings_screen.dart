@@ -49,47 +49,56 @@ class SettingsScreen extends StatelessWidget {
                       title: const Text('Background Audio'),
                       subtitle: Text(audioProvider.isEnabled ? 'On' : 'Off'),
                       value: audioProvider.isEnabled,
-                      onChanged: (bool value) {
-                        audioProvider.toggleAudio();
+                      onChanged: (bool value) async {
+                        await audioProvider.toggleAudio();
                       },
                     ),
-                    if (audioProvider.isEnabled) ...[
-                      ListTile(
-                        title: const Text('Audio Track'),
-                        trailing: DropdownButton<String>(
-                          value: audioProvider.selectedTrack,
-                          onChanged: (String? newValue) {
-                            if (newValue != null) {
-                              audioProvider.changeTrack(newValue);
-                            }
-                          },
-                          items: AudioService.audioTracks.keys.map((String track) {
-                            return DropdownMenuItem(
-                              value: track,
-                              child: Text(track),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Volume'),
-                            Slider(
-                              value: audioProvider.volume,
-                              onChanged: (double value) {
-                                audioProvider.setVolume(value);
-                              },
-                              min: 0.0,
-                              max: 1.0,
+                    AnimatedCrossFade(
+                      firstChild: const SizedBox.shrink(),
+                      secondChild: Column(
+                        children: [
+                          ListTile(
+                            title: const Text('Audio Track'),
+                            trailing: DropdownButton<String>(
+                              value: audioProvider.selectedTrack,
+                              onChanged: audioProvider.isEnabled ? (String? newValue) async {
+                                if (newValue != null) {
+                                  await audioProvider.changeTrack(newValue);
+                                }
+                              } : null,
+                              items: AudioService.audioTracks.keys.map((String track) {
+                                return DropdownMenuItem(
+                                  value: track,
+                                  child: Text(track),
+                                );
+                              }).toList(),
                             ),
-                          ],
-                        ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Volume'),
+                                Slider(
+                                  value: audioProvider.volume,
+                                  onChanged: audioProvider.isEnabled ? (double value) {
+                                    audioProvider.setVolume(value);
+                                  } : null,
+                                  min: 0.0,
+                                  max: 1.0,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
                       ),
-                      const SizedBox(height: 8),
-                    ],
+                      crossFadeState: audioProvider.isEnabled
+                          ? CrossFadeState.showSecond
+                          : CrossFadeState.showFirst,
+                      duration: const Duration(milliseconds: 300),
+                    ),
                   ],
                 ),
               ),

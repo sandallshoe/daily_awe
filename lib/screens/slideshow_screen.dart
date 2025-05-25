@@ -35,7 +35,8 @@ class _SlideshowScreenState extends State<SlideshowScreen> with TickerProviderSt
   bool _isOffline = false;
 
   // Ken Burns effect parameters
-  final List<double> _scales = [1.0, 1.1, 1.2];
+  final List<double> _portraitScales = [1.0, 1.1, 1.2];
+  final List<double> _landscapeScales = [1.0, 1.05, 1.1];
   final List<Alignment> _alignments = [
     const Alignment(-1, -1),
     const Alignment(1, 1),
@@ -59,13 +60,27 @@ class _SlideshowScreenState extends State<SlideshowScreen> with TickerProviderSt
       vsync: this,
     );
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(_fadeController);
-    _initializeKenBurnsAnimations();
     _initializeServices();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _initializeKenBurnsAnimations();
+    // Only start timer if we have images loaded
+    if (!_isLoading && _images.isNotEmpty) {
+      _startSlideshowTimer();
+    }
+  }
+
   void _initializeKenBurnsAnimations() {
-    final startScale = _scales[_currentScaleIndex];
-    final endScale = _scales[(_currentScaleIndex + 1) % _scales.length];
+    if (!mounted) return;
+    
+    final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
+    final scales = isPortrait ? _portraitScales : _landscapeScales;
+    
+    final startScale = scales[_currentScaleIndex];
+    final endScale = scales[(_currentScaleIndex + 1) % scales.length];
     final startAlignment = _alignments[_currentAlignmentIndex];
     final endAlignment = _alignments[(_currentAlignmentIndex + 1) % _alignments.length];
 
@@ -101,15 +116,6 @@ class _SlideshowScreenState extends State<SlideshowScreen> with TickerProviderSt
       );
       _lastInterval = newInterval;
       debugPrint('SlideshowScreen: Started timer with ${newInterval}s interval');
-    }
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Only start timer if we have images loaded
-    if (!_isLoading && _images.isNotEmpty) {
-      _startSlideshowTimer();
     }
   }
 
@@ -185,7 +191,7 @@ class _SlideshowScreenState extends State<SlideshowScreen> with TickerProviderSt
         }
         
         // Update Ken Burns effect parameters
-        _currentScaleIndex = (_currentScaleIndex + 1) % _scales.length;
+        _currentScaleIndex = (_currentScaleIndex + 1) % _portraitScales.length;
         _currentAlignmentIndex = (_currentAlignmentIndex + 1) % _alignments.length;
         
         // Reset and reinitialize Ken Burns animations
@@ -318,20 +324,25 @@ class _SlideshowScreenState extends State<SlideshowScreen> with TickerProviderSt
               ),
             ),
             Positioned(
-              top: 16,
-              right: 16,
-              child: IconButton(
-                icon: const Icon(Icons.settings),
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const SettingsScreen(),
+              top: 0,
+              right: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: IconButton(
+                    icon: const Icon(Icons.settings),
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const SettingsScreen(),
+                        ),
+                      );
+                    },
+                    color: Colors.white,
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.black26,
                     ),
-                  );
-                },
-                color: Colors.white,
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.black26,
+                  ),
                 ),
               ),
             ),
