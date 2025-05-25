@@ -9,6 +9,12 @@ build/
 ios/Pods/
 .env
 
+# Project documentation (internal)
+todo.md
+caching_readme.md
+daily_awe_spec.md
+DailyAwe_Testing_Criteria.md
+
 # IDE specific
 .idea/
 .vscode/
